@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     PHONE:     phone     || "",
                     TYPE:      type      || "",
                 },
-                listIds: [2],
+                listIds: [5],
                 updateEnabled: true,
             }),
         })
