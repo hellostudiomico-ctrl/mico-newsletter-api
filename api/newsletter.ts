@@ -1,23 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node"
 
-const MJ_API  = process.env.MAILJET_API_KEY
-const MJ_SEC  = process.env.MAILJET_API_SECRET
-const MJ_LIST = process.env.MAILJET_LIST_ID
-
-function mjAuth() {
-    return "Basic " + Buffer.from(`${MJ_API}:${MJ_SEC}`).toString("base64")
-}
-
-async function mj(path: string, method: string, body?: unknown) {
-    return fetch(`https://api.mailjet.com/v3/REST/${path}`, {
-        method,
-        headers: {
-            Authorization: mjAuth(),
-            "Content-Type": "application/json",
-        },
-        body: body ? JSON.stringify(body) : undefined,
-    })
-}
+const BREVO_KEY = process.env.BREVO_API_KEY
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "OPTIONS") return res.status(200).end()
@@ -30,42 +13,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const emailClean = email.trim().toLowerCase()
-    const fullName   = [firstName, name].filter(Boolean).join(" ").trim()
 
     try {
-        const contactRes = await mj("contact", "POST", {
-            Email: emailClean,
-            Name: fullName || emailClean,
-            IsExcludedFromCampaigns: false,
+        const r = await fetch("https://api.brevo.com/v3/contacts", {
+            method: "POST",
+            headers: {
+                "api-key": BREVO_KEY!,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                email: emailClean,
+                attributes: {
+                    FIRSTNAME: firstName || "",
+                    LASTNAME:  name      || "",
+                    PHONE:     phone     || "",
+                    TYPE:      type      || "",
+                },
+                listIds: [2],
+                updateEnabled: true,
+            }),
         })
 
-        if (!contactRes.ok) {
-            const err = await contactRes.json().catch(() => ({}))
-            const isDuplicate = (err as any)?.StatusCode === 400
-            if (!isDuplicate) {
-                return res.status(500).json({ error: "Failed to create contact" })
-            }
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}))
+            console.error("Brevo error:", err)
+            return res.status(500).json({ error: "Subscription failed" })
         }
-
-        await mj(`contactdata/${encodeURIComponent(emailClean)}`, "PUT", {
-            Data: [
-                { Name: "firstname", Value: firstName || "" },
-                { Name: "name",      Value: name      || "" },
-                { Name: "phone",     Value: phone      || "" },
-                { Name: "type",      Value: type       || "" },
-            ],
-        })
-
-        await mj("listrecipient", "POST", {
-            ContactsListID: Number(MJ_LIST),
-            Email: emailClean,
-            Action: "addnoforce",
-        })
 
         return res.status(200).json({ ok: true })
 
     } catch (err) {
-        console.error("Mailjet error:", err)
+        console.error("Brevo error:", err)
         return res.status(500).json({ error: "Subscription failed" })
     }
 }
